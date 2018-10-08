@@ -183,7 +183,8 @@ class CANBUS_RELATIONSHIP():
 		return [Filter, Cars, Common_IDs]
 
 
-if __name__ == "__main__":
+def test_for_common_id():
+	"""用于测试公共id"""
 	aa = CANBUS_RELATIONSHIP(None, r"D:\JBT\DATA_PRO\3L_CAN\canid_V3.ini")
 
 	filelines = open(r"D:\JBT\DATA_PRO\3L_CAN\untitle.txt", "r").readlines()
@@ -223,5 +224,73 @@ if __name__ == "__main__":
 	outfile = open(r"D:\JBT\DATA_PRO\3L_CAN\OUT.ASM", "w")
 	outfile.write(out_data)
 	outfile.close()
+
+
+def test_for_filter(inifile, infile, outfile):
+	"""用于测试滤波设置"""
+
+	print "正在初始化..."
+	relationship = CANBUS_RELATIONSHIP(None, inifile)
+	filelines = open(infile, "r").readlines()
+
+	print "正在分析数据..."
+	canbus_datalist = [CANBUS_DATA(eachline, "JBT") for eachline in filelines if CANBUS_DATA(eachline, "JBT").is_canbus_data]
+	canbus_datalist_and_flag = []
+	for each_data in canbus_datalist:
+		if each_data.ID in relationship.filter[0]:
+			each_data.set_flag("Send")
+		elif each_data.ID in relationship.filter[1]:
+			each_data.set_flag("Recv")
+		else:
+			each_data.set_flag("Unknow")
+		canbus_datalist_and_flag.append(each_data)
+
+	print "正在整理数据..."
+	out_data = ''
+	Count = 0
+	Found_flag = False
+	for each_data in canbus_datalist_and_flag:
+		if each_data.flag == "Send":
+			if Count < 40:
+				out_data += '\n'
+			Count = 0
+			Found_flag = True
+		elif each_data.flag == "Recv":
+			if Count <= 40:
+				out_data += ' ' * (40 - Count)
+			else:
+				out_data += ' ' * 40
+			Count = 40
+			Found_flag = True
+
+		if Found_flag:
+			out_data += each_data.ID + ' '
+			Count += 1 + len(each_data.ID)
+			for data in each_data.data:
+				out_data += data + ' '
+			Count += 3 * len(each_data.data)
+
+			if Count > 40:
+				out_data += '\n'
+			Found_flag = False
+
+	print "正在保存数据..."
+	outfile = open(outfile, "w")
+	outfile.write(out_data)
+	outfile.close()
+	print "处理完成!"
+
+
+if __name__ == "__main__":
+
+	ini_file_path = r"D:\JBT\DATA_PRO\3L_CAN\canid_V3.ini"
+	org_file_path = r"D:\JBT\DATA_PRO\3L_CAN\untitle.txt"
+	out_file_path = r"D:\JBT\DATA_PRO\3L_CAN\OUT.ASM"
+
+	test_for_filter(ini_file_path, org_file_path, out_file_path)
+
+
+
+
 
 	pass
