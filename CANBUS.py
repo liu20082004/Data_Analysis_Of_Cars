@@ -159,27 +159,28 @@ class CANBUS_RELATIONSHIP():
 		# 得到滤波设置
 		filter_send = datas.xpath("//filter/Send/text()")
 		filter_recv = datas.xpath("//filter/Recv/text()")
-		Filter = [filter_send[0].split(','),filter_recv[0].split(',')]
+		Filter = [filter_send[0].replace(' ', '').replace('\n', '').replace('\t', '').split(','), filter_recv[0].replace(' ', '').replace('\n', '').replace('\t', '').split(',')]  #删除多余的空格
 
 		# 得到专车ID
-		Cars = []
+		Cars = {}
 		Car_Types = datas.xpath("//Car_Type")
 		for Car_Type in Car_Types:
 			Car_Name = Car_Type.xpath(".//@car_name")
-			Car_Systems = []
+			Car_Systems = {}
 			Car_AllSystems = Car_Type.xpath(".//System")
 			for Car_EachSystem in Car_AllSystems:
 				System_Name = Car_EachSystem.xpath(".//@sys_name")
-				Filter_Send = Car_EachSystem.xpath(".//Send/text()")[0].split(',')
-				Filter_Recv = Car_EachSystem.xpath(".//Recv/text()")[0].split(',')
+				Filter_Send = Car_EachSystem.xpath(".//Send/text()")[0].replace(' ', '').replace('\n', '').replace('\t', '').split(',')
+				Filter_Recv = Car_EachSystem.xpath(".//Recv/text()")[0].replace(' ', '').replace('\n', '').replace('\t', '').split(',')
 				filter = CANBUS_FILTER(Filter_Send, Filter_Recv)
 				Car_System = CAR_SYSTEM(System_Name, filter)
-				Car_Systems.append(Car_System)
+				#Car_Systems.append(Car_System)
+				Car_Systems[System_Name[0]] = Car_System  # System_Name必须只有一个
 			Car = CAR(Car_Name, Car_Systems)
-			Cars.append(Car)
+			Cars[Car_Name[0]] = Car  #Car_Name必须只有一个
 
 		# 公共ID
-		Common_IDs = datas.xpath("//Common_ID//Send//text()")[0].strip('\n').strip('\t').split(',')
+		Common_IDs = datas.xpath("//Common_ID//Send//text()")[0].replace(' ', '').replace('\n', '').replace('\t', '').split(',')
 		return [Filter, Cars, Common_IDs]
 
 
@@ -218,8 +219,6 @@ def test_for_common_id():
 
 		if Count > 40:
 			out_data += '\n'
-
-
 
 	outfile = open(r"D:\JBT\DATA_PRO\3L_CAN\OUT.ASM", "w")
 	outfile.write(out_data)
@@ -281,13 +280,87 @@ def test_for_filter(inifile, infile, outfile):
 	print "处理完成!"
 
 
+def init_canbus_data(ini_file_path, in_file_path):
+	"""初始化"""
+
+	relationship = CANBUS_RELATIONSHIP(None, ini_file_path)  # 模块化写得不好,先这样拆分吧,这一段每个功能都能用得上
+	with open(in_file_path, "r") as in_file:
+		filelines = in_file.readlines()
+
+	canbus_datalist = [CANBUS_DATA(eachline, "JBT") for eachline in filelines if CANBUS_DATA(eachline, "JBT").is_canbus_data]
+	return relationship, canbus_datalist
+
+
+def canbus_print(canbus_datalist, print_type):
+	"""用于输出整理好的数据"""
+	out_data = ''
+	Count = 0
+	Found_flag = False
+	for each_data in canbus_datalist:
+		if each_data.flag == "Send" or print_type == "send unknown":  # send unknown 用于处理send==None的情况
+			if Count < 40:
+				out_data += '\n'
+			Count = 0
+			Found_flag = True
+		elif each_data.flag == "Recv" or print_type == "recv unknown":  # recv unknown 用于处理recv==None的情况
+			if Count <= 40:
+				out_data += ' ' * (40 - Count)
+			else:
+				out_data += ' ' * 40
+			Count = 40
+			Found_flag = True
+
+		if Found_flag:
+			out_data += each_data.ID + ' '
+			Count += 1 + len(each_data.ID)
+			for data in each_data.data:
+				out_data += data + ' '
+			Count += 3 * len(each_data.data)
+
+			if Count > 40:
+				out_data += '\n'
+			Found_flag = False
+	return out_data
+
+
+def test_for_car(inifile, infile, outfile, car_name, system_name):
+	"""
+	用于处理专车ID, 考虑到专车ID其实也是跟滤波是一样的道理,只是从配置文件中取的参量不一样,
+	故应该考虑把滤波函数扩展得通用化一些:
+	目标: 1.滤波函数入口和出口(send_id和recv_id,当某些参量为空时,自动标识)
+	      2.公共id和专车id,都可以调用滤波函数,实现统一处理
+	"""
+
+	relationship, canbus_datalist = init_canbus_data(inifile, infile)  # 初始化
+	car_relationship = relationship.cars[car_name]
+	if system_name:
+		sys_relationship = car_relationship.system[system_name]
+	else:
+		sys_relationship = car_relationship.systems["ALL"]
+	canbus_datalist_and_flag = []
+	for each_data in canbus_datalist:
+		if each_data.ID in sys_relationship.filters.send:
+			each_data.set_flag("Send")
+		elif each_data.ID in sys_relationship.filters.recv:
+			each_data.set_flag("Recv")
+		else:
+			each_data.set_flag("Unknow")
+		canbus_datalist_and_flag.append(each_data)
+
+	data = canbus_print(canbus_datalist_and_flag, None)
+	with open(outfile, 'w') as f:
+		f.write(data)
+
+
 if __name__ == "__main__":
 
 	ini_file_path = r"D:\JBT\DATA_PRO\3L_CAN\canid_V3.ini"
 	org_file_path = r"D:\JBT\DATA_PRO\3L_CAN\untitle.txt"
 	out_file_path = r"D:\JBT\DATA_PRO\3L_CAN\OUT.ASM"
 
-	test_for_filter(ini_file_path, org_file_path, out_file_path)
+	#test_for_filter(ini_file_path, org_file_path, out_file_path)
+	#test_for_common_id()
+	test_for_car(ini_file_path, org_file_path, out_file_path, "BENZ", None)
 
 
 
